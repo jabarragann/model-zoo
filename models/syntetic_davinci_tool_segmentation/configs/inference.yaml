@@ -1,0 +1,54 @@
+imports:
+  - $from pathlib import Path
+  - $import matplotlib.pyplot as plt
+  - $import torch
+  - $import numpy as np
+  - $from PIL import Image
+  - $from monai.visualize.utils import blend_images
+  - $from monai.networks.nets import FlexibleUNet
+  - $import torchvision.transforms as T
+
+workspace: $Path('.').parent.resolve()
+path_to_weights: $(@workspace / "../models/myweights.pt").resolve()
+path_to_images: $(@workspace / "../sample_data/img_000035.png").resolve()
+device: "$torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')"
+
+tensor_transform: $T.ToTensor()
+normalize_transform: $T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+img_transforms: $T.Compose([@tensor_transform, @normalize_transform])
+
+pil_image: $Image.open(@path_to_images)
+image: $np.array(@pil_image)
+
+model_def:
+  _target_: FlexibleUNet
+  in_channels: 3
+  out_channels: 5
+  backbone: "efficientnet-b0"
+  pretrained: True
+  is_pad: False
+model: $@model_def.to(@device)
+
+load_weights:
+  - "$print('loading weights from: ', @path_to_weights)"
+  - "$@model.load_state_dict(torch.load(@path_to_weights))"
+  - "$@model.eval()"
+
+inference:
+  input_tensor0: $@img_transforms(@image)
+  input_tensor1: $@img_transforms(@image).to(@device)
+  input_tensor2: $torch.unsqueeze(@inference#input_tensor1, 0) # Add batch dimension. 4D input_tensor
+  inferred1: $@model(@inference#input_tensor2)
+  inferred2: $@inference#inferred1[0] # go back to 3D tensor
+  inferred_single_ch: $@inference#inferred2.argmax(dim=0, keepdim=True).detach().cpu() # Get a single channel image
+  blended1: $blend_images(@inference#input_tensor0, @inference#inferred_single_ch, cmap="viridis", alpha=0.9).numpy()
+  blended2: $(np.transpose(@inference#blended1, (1, 2, 0)) * 254).astype(np.uint8)
+
+display_inference:
+  - _requires_: "@load_weights"
+  - $print("displaying images:")
+  - $plt.subplot(1,2,1)
+  - $plt.imshow(@image)
+  - $plt.subplot(1,2,2)
+  - $plt.imshow(@inference#blended2)
+  - $plt.show()
