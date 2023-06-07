@@ -1,6 +1,10 @@
 
 # Your Model Name
 
+# Warning
+Repo history has the model weights saved to it. You might want push a new branch that does not have this weights in the commit history.
+
+
 Describe your model here and how to run it, for example using `inference.json`:
 
 ```
